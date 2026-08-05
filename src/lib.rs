@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, option::Iter, vec};
+use std::{collections::VecDeque, vec};
 
 #[derive(Clone, Copy, Debug)]
 struct PredId(usize);
@@ -57,20 +57,35 @@ impl Branch {
     /// ```
     /// br.add_branch(expr_id, branch, false);
     /// ```
-    fn add_branch(&mut self, expr_id: ExprId, branch: Branch, under_expr: bool) {
+    ///
+    /// bool
+    /// - true branch added
+    /// - false branch not added
+    fn add_branch(&mut self, expr_id: ExprId, branch: Branch, under_expr: bool) -> bool {
         match self {
-            Branch::Fork { expr_id: child_expr_id , cont, l, r} => {
-                l.add_branch(expr_id, branch.clone(), *child_expr_id == expr_id || under_expr);
-                r.add_branch(expr_id, branch, *child_expr_id == expr_id || under_expr);
+            Branch::Fork { 
+                expr_id: child_expr_id,
+                cont,
+                l, 
+                r
+            } => {
+                let flag = *child_expr_id == branch.get_expr_id() || under_expr;
+                let a = l.add_branch(expr_id, branch.clone(), flag);
+                let b = r.add_branch(expr_id, branch, flag);
+                a || b
             }
             Branch::Child { expr_id: child_expr_id, cont, c } => {
+                let flag = *child_expr_id == branch.get_expr_id() || under_expr;
                 if let Some(parent_branch) = c {
-                    parent_branch.add_branch(expr_id, branch, *child_expr_id == expr_id || under_expr);
+                    parent_branch.add_branch(expr_id, branch, flag)
                 } else {
-                    if (*child_expr_id == expr_id || under_expr) && !*cont {
-                        let mut new_branch = branch;
+                    if (under_expr || *child_expr_id == expr_id) && !*cont {
+                        let mut new_branch = branch.clone();
                         new_branch.set_expr_id(*child_expr_id);
                         *self = new_branch;
+                        true
+                    } else {
+                        false
                     }
                 } 
             }
@@ -193,15 +208,12 @@ impl tableau {
         if let Some(mut init_branch) = gen_branch_from_vec(ExprId(0), &self.expr_list) {
             let mut stack: VecDeque<ExprId> = self.expr_list.iter().enumerate().map(|(i, _j)| ExprId(i)).collect();
 
-            println!("{:#?}", init_branch);
             while let Some(expr_id) = stack.pop_front() {
                 if let Some((branch, new_expr_id_list)) = self.gen_branch(expr_id) {
-                    init_branch.add_branch(expr_id, branch, false);
+                    init_branch.add_branch(expr_id, branch.clone(), false);
                     for i in new_expr_id_list {
-                        println!("expr id: {:?}", i);
                         stack.push_back(i);
                     }
-                    println!("{:#?}", init_branch);
                 }
             }
             Some(init_branch)
@@ -221,7 +233,9 @@ impl tableau {
 
                     Expr::Not(x) => { 
                         let child_expr_id = self.push(*x);
-                        Some((Branch::Child { expr_id: child_expr_id, cont: false, c: None }, vec![child_expr_id]))
+                        Some(
+                            (Branch::Child { expr_id, cont: false, c: Some(Box::new(Branch::Child { expr_id: child_expr_id, cont: false, c: None })) }
+                             , vec![child_expr_id]))
                     }
 
                     Expr::Pred(_pred) => {
@@ -360,6 +374,7 @@ mod tests {
     fn it_works03() {
         let pred_a = Box::new(Expr::Pred(PredId(0)));
         let pred_b = Box::new(Expr::Pred(PredId(1)));
+
         let mut t = tableau::new(
             vec![],
             not(
@@ -385,7 +400,5 @@ mod tests {
         for (i, expr) in t.expr_list.iter().enumerate() {
             println!("{}: {}", i, expr.to_string(&pred_list));
         }
-
-        
     }
 }
