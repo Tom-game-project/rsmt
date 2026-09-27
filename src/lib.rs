@@ -61,7 +61,7 @@ pub struct ExprId(usize);
 
 #[derive(Clone, Debug)]
 pub enum Branch {
-    Fork{expr_id: ExprId, cont: bool, l: Box<Branch>, r: Box<Branch>},
+    Fork{expr_id: ExprId, l: Box<Branch>, r: Box<Branch>},
     Child{expr_id: ExprId, cont: bool, c: Option<Box<Branch>>}
 }
 
@@ -78,7 +78,6 @@ impl Branch {
         match self {
             Branch::Fork { 
                 expr_id: child_expr_id,
-                cont,
                 l, 
                 r
             } => {
@@ -127,7 +126,8 @@ impl Branch {
         }
     }
 
-    pub fn find_closd_branch(&self,
+    pub fn find_closd_branch(
+        &mut self,
         expr_list: &[Expr]
     ) {
         let atom_expr_list = expr_list
@@ -144,13 +144,13 @@ impl Branch {
     }
 
     fn find_closd_branch_rec<'a>(
-        &'a self,
+        &'a mut self,
         expr_id_list: &mut Vec<ExprId>,
         expr_list: &[Expr],
         atom_expr_list: &Vec<(&Expr, Expr)> 
     ) {
         match self {
-            Branch::Fork { expr_id, cont, l, r } => {
+            Branch::Fork { expr_id, l, r } => {
                 expr_id_list.push(*expr_id);
                 l.find_closd_branch_rec(expr_id_list, expr_list, atom_expr_list);
                 r.find_closd_branch_rec(expr_id_list, expr_list, atom_expr_list);
@@ -176,17 +176,18 @@ impl Branch {
                             pair_flag.0 && pair_flag.1
                         }
                     ) {
-                        for i in expr_id_list.into_iter() {
-                            print!("{:?}", i);
-                        }
-                        println!("tableau closed");
+                        // for i in expr_id_list.into_iter() {
+                        //     print!("{:?}", i);
+                        // }
+                        // println!("tableau closed");
+                        *cont = true;
                         expr_id_list.pop();
                     } else {
-                        for i in expr_id_list.into_iter() {
-                            print!("{:?}", i);
-                        }
+                        // for i in expr_id_list.into_iter() {
+                        //     print!("{:?}", i);
+                        // }
                         expr_id_list.pop();
-                        println!("");
+                        // println!("");
                     }
                 }
             }
@@ -196,7 +197,7 @@ impl Branch {
     fn get_dep_dot(&self) -> Vec<String> {
         let mut rlist = Vec::new();
         match self {
-            Branch::Fork { expr_id, cont, l, r } => {
+            Branch::Fork { expr_id, l, r } => {
                 rlist.push(format!("{} -> {} [ ]", expr_id.0, l.get_expr_id().0));
                 rlist.push(format!("{} -> {} [ ]", expr_id.0, r.get_expr_id().0));
                 rlist.append(&mut l.get_dep_dot());
@@ -213,7 +214,12 @@ impl Branch {
     }
 
     pub fn dot(&self, expr_list: &[Expr], pred_list: &[String]) -> String {
-        let nodes = expr_list.iter().enumerate().map(|(i, a)| format!("{} [label =\"{}\"]", i, a.to_string(pred_list))).collect::<Vec<String>>().join("\n");
+        let nodes = expr_list
+            .iter()
+            .enumerate()
+            .map(|(i, a)| format!("{} [label =\"{}\"]", i, a.to_string(pred_list)))
+            .collect::<Vec<String>>()
+            .join("\n");
         format!("
 digraph {{
 {}
@@ -223,7 +229,7 @@ digraph {{
     }
 }
 
-pub struct tableau {
+pub struct Tableau {
     pub expr_list: Vec<Expr>,
 }
 
@@ -238,7 +244,7 @@ fn gen_branch_from_vec(expr_id: ExprId, expr_list: &[Expr]) -> Option<Box<Branch
     }
 }
 
-impl tableau {
+impl Tableau {
 
     pub fn new (pre: Vec<Expr>, res: Expr) -> Self {
         let mut expr_list = pre;
@@ -264,6 +270,7 @@ impl tableau {
                     for i in new_expr_id_list {
                         stack.push_back(i);
                     }
+                    init_branch.find_closd_branch(&self.expr_list);
                 }
             }
             Some(init_branch)
@@ -295,7 +302,7 @@ impl tableau {
                     Expr::Or(l, r) => {
                         let l_expr_id = self.register_expr(not(*l));
                         let r_expr_id = self.register_expr(not(*r));
-                        Some((Branch::Child {expr_id, cont: false , c: Some(Box::new( Branch::Child { expr_id: l_expr_id, cont: false, c: Some(Box::new(Branch::Child { expr_id: r_expr_id, cont: false , c: None })) }))}, vec![l_expr_id, r_expr_id]))
+                        Some((Branch::Child {expr_id, cont: false , c: Some(Box::new(Branch::Child { expr_id: l_expr_id, cont: false, c: Some(Box::new(Branch::Child { expr_id: r_expr_id, cont: false , c: None })) }))}, vec![l_expr_id, r_expr_id]))
                     }
 
                     Expr::And(l, r) => {
@@ -304,7 +311,6 @@ impl tableau {
                         Some((
                             Branch::Fork { 
                                 expr_id, 
-                                cont: false,
                                 l: Box::new(Branch::Child { expr_id: l_expr_id, cont: false , c: None }), 
                                 r: Box::new(Branch::Child { expr_id: r_expr_id, cont: false , c: None }),
                             },
@@ -331,7 +337,6 @@ impl tableau {
                 Some((
                     Branch::Fork { 
                         expr_id, 
-                        cont: false,
                         l: Box::new(Branch::Child { expr_id: l_expr_id, cont: false, c: None }), 
                         r: Box::new(Branch::Child { expr_id: r_expr_id, cont: false, c: None }),
                     },
@@ -351,7 +356,6 @@ impl tableau {
                 Some((
                     Branch::Fork { 
                         expr_id, 
-                        cont: false,
                         l: Box::new(Branch::Child { expr_id: l_expr_id, cont: false, c: None }), 
                         r: Box::new(Branch::Child { expr_id: r_expr_id, cont: false, c: None }),
                     },
@@ -397,7 +401,7 @@ mod tests {
     fn it_works01() {
         let pred_a = Box::new(Expr::Pred(PredId(0)));
         let pred_b = Box::new(Expr::Pred(PredId(1)));
-        let mut t = tableau::new(
+        let mut t = Tableau::new(
             Vec::new(),
             not(
                 implies(*pred_a.clone(), Expr::And(pred_a.clone(), Box::new(Expr::Or(pred_a, pred_b))))
@@ -421,7 +425,7 @@ mod tests {
         let expr_pre = implies(Expr::And(pred_a.clone(), pred_b.clone()), *pred_c.clone());
         let expr_res = implies(*pred_a, Expr::Or(Box::new(not(*pred_b)), pred_c));
 
-        let mut t = tableau::new(vec![expr_pre], not(expr_res));
+        let mut t = Tableau::new(vec![expr_pre], not(expr_res));
 
         if let Some(b) = t.gen_branch(ExprId(0)) {
             println!("branch {:#?}", b);
@@ -556,7 +560,7 @@ mod tests {
         ];
 
         for (pre, res) in test_cases {
-            let mut t = tableau::new(
+            let mut t = Tableau::new(
                 pre,
                 res
             );
@@ -564,7 +568,7 @@ mod tests {
             if let Some(branch) = t.resolve() {
                 println!("{:#?}", branch);
                 println!("start");
-                branch.find_closd_branch(&t.expr_list);
+                // branch.find_closd_branch(&t.expr_list);
                 println!("{}", branch.dot(&t.expr_list, &pred_list));
                 println!("end");
             } else {
