@@ -15,9 +15,7 @@ pub enum Expr {
 impl Expr {
     pub fn to_string(&self, pred_list: &[String]) -> String {
         match self {
-            Expr::Pred(predid) => {
-                format!("{}", pred_list[predid.0])
-            }
+            Expr::Pred(predid) => pred_list[predid.0].to_string(),
             Expr::Not(expr) => {
                 format!("¬ ({})", expr.to_string(pred_list))
             }
@@ -61,12 +59,19 @@ pub struct ExprId(usize);
 
 #[derive(Clone, Debug)]
 pub enum Branch {
-    Fork{expr_id: ExprId, l: Box<Branch>, r: Box<Branch>},
-    Child{expr_id: ExprId, cont: bool, c: Option<Box<Branch>>}
+    Fork {
+        expr_id: ExprId,
+        l: Box<Branch>,
+        r: Box<Branch>,
+    },
+    Child {
+        expr_id: ExprId,
+        cont: bool,
+        c: Option<Box<Branch>>,
+    },
 }
 
 impl Branch {
-
     /// ```
     /// br.add_branch(expr_id, branch, false);
     /// ```
@@ -76,17 +81,21 @@ impl Branch {
     /// - false branch not added
     fn add_branch(&mut self, expr_id: ExprId, branch: Branch, under_expr: bool) -> bool {
         match self {
-            Branch::Fork { 
+            Branch::Fork {
                 expr_id: child_expr_id,
-                l, 
-                r
+                l,
+                r,
             } => {
                 let flag = *child_expr_id == branch.get_expr_id() || under_expr;
                 let a = l.add_branch(expr_id, branch.clone(), flag);
                 let b = r.add_branch(expr_id, branch, flag);
                 a || b
             }
-            Branch::Child { expr_id: child_expr_id, cont, c } => {
+            Branch::Child {
+                expr_id: child_expr_id,
+                cont,
+                c,
+            } => {
                 let flag = *child_expr_id == branch.get_expr_id() || under_expr;
                 if let Some(parent_branch) = c {
                     parent_branch.add_branch(expr_id, branch, flag)
@@ -99,7 +108,7 @@ impl Branch {
                     } else {
                         false
                     }
-                } 
+                }
             }
         }
     }
@@ -117,37 +126,25 @@ impl Branch {
 
     fn get_expr_id(&self) -> ExprId {
         match self {
-            Branch::Fork { expr_id, .. } => {
-                *expr_id
-            }
-            Branch::Child { expr_id, .. } => {
-                *expr_id
-            }
+            Branch::Fork { expr_id, .. } => *expr_id,
+            Branch::Child { expr_id, .. } => *expr_id,
         }
     }
 
-    pub fn find_closd_branch(
-        &mut self,
-        expr_list: &[Expr]
-    ) {
+    pub fn find_closd_branch(&mut self, expr_list: &[Expr]) {
         let atom_expr_list = expr_list
             .iter()
-            .filter_map(
-                |a| a.get_atom_pair().and_then(|b| Some((a, b)))
-            ).collect();
+            .filter_map(|a| a.get_atom_pair().map(|b| (a, b)))
+            .collect();
 
-        self.find_closd_branch_rec(
-            &mut vec![],
-            expr_list,
-            &atom_expr_list
-        );
+        self.find_closd_branch_rec(&mut vec![], expr_list, &atom_expr_list);
     }
 
-    fn find_closd_branch_rec<'a>(
-        &'a mut self,
+    fn find_closd_branch_rec(
+        &mut self,
         expr_id_list: &mut Vec<ExprId>,
         expr_list: &[Expr],
-        atom_expr_list: &Vec<(&Expr, Expr)> 
+        atom_expr_list: &Vec<(&Expr, Expr)>,
     ) {
         match self {
             Branch::Fork { expr_id, l, r } => {
@@ -164,18 +161,17 @@ impl Branch {
                 } else {
                     expr_id_list.push(*expr_id);
                     if atom_expr_list.iter().any(|(i, not_i)| {
-                            let it = expr_id_list.iter().map(|i| &expr_list[i.0]);
-                            let pair_flag = it.fold((false, false), |mut acc, expr_id_footprint| {
-                                if expr_id_footprint == *i {
-                                    acc.0 = true;
-                                } else if expr_id_footprint == not_i {
-                                    acc.1 = true;
-                                }
-                                acc
-                            });
-                            pair_flag.0 && pair_flag.1
-                        }
-                    ) {
+                        let it = expr_id_list.iter().map(|i| &expr_list[i.0]);
+                        let pair_flag = it.fold((false, false), |mut acc, expr_id_footprint| {
+                            if expr_id_footprint == *i {
+                                acc.0 = true;
+                            } else if expr_id_footprint == not_i {
+                                acc.1 = true;
+                            }
+                            acc
+                        });
+                        pair_flag.0 && pair_flag.1
+                    }) {
                         // for i in expr_id_list.into_iter() {
                         //     print!("{:?}", i);
                         // }
@@ -203,7 +199,11 @@ impl Branch {
                 rlist.append(&mut l.get_dep_dot());
                 rlist.append(&mut r.get_dep_dot());
             }
-            Branch::Child { expr_id, cont, c } => {
+            Branch::Child {
+                expr_id,
+                cont: _,
+                c,
+            } => {
                 if let Some(branch) = c {
                     rlist.push(format!("{} -> {} [ ]", expr_id.0, branch.get_expr_id().0));
                     rlist.append(&mut branch.get_dep_dot());
@@ -220,12 +220,16 @@ impl Branch {
             .map(|(i, a)| format!("{} [label =\"{}\"]", i, a.to_string(pred_list)))
             .collect::<Vec<String>>()
             .join("\n");
-        format!("
+        format!(
+            "
 digraph {{
 {}
 {}
 }}
-        ", nodes, self.get_dep_dot().join("\n"))
+        ",
+            nodes,
+            self.get_dep_dot().join("\n")
+        )
     }
 }
 
@@ -236,22 +240,21 @@ pub struct Tableau {
 fn gen_branch_from_vec(expr_id: ExprId, expr_list: &[Expr]) -> Option<Box<Branch>> {
     if expr_id.0 < expr_list.len() {
         let succ_id = ExprId(expr_id.0 + 1);
-        Some(
-            Box::new(Branch::Child { expr_id, cont: false, c: gen_branch_from_vec(succ_id, expr_list) })
-        )
+        Some(Box::new(Branch::Child {
+            expr_id,
+            cont: false,
+            c: gen_branch_from_vec(succ_id, expr_list),
+        }))
     } else {
         None
     }
 }
 
 impl Tableau {
-
-    pub fn new (pre: Vec<Expr>, res: Expr) -> Self {
+    pub fn new(pre: Vec<Expr>, res: Expr) -> Self {
         let mut expr_list = pre;
         expr_list.push(res);
-        Self {
-            expr_list,
-        }
+        Self { expr_list }
     }
 
     fn register_expr(&mut self, expr: Expr) -> ExprId {
@@ -262,7 +265,12 @@ impl Tableau {
 
     pub fn resolve(&mut self) -> Option<Box<Branch>> {
         if let Some(mut init_branch) = gen_branch_from_vec(ExprId(0), &self.expr_list) {
-            let mut stack: VecDeque<ExprId> = self.expr_list.iter().enumerate().map(|(i, _j)| ExprId(i)).collect();
+            let mut stack: VecDeque<ExprId> = self
+                .expr_list
+                .iter()
+                .enumerate()
+                .map(|(i, _j)| ExprId(i))
+                .collect();
 
             while let Some(expr_id) = stack.pop_front() {
                 if let Some((branch, new_expr_id_list)) = self.gen_branch(expr_id) {
@@ -285,90 +293,155 @@ impl Tableau {
         let expr = self.expr_list[expr_id.0].clone();
 
         match expr {
-            Expr::Not(x) => {
-                match *x {
-
-                    Expr::Not(x) => { 
-                        let child_expr_id = self.register_expr(*x);
-                        Some(
-                            (Branch::Child { expr_id, cont: false, c: Some(Box::new(Branch::Child { expr_id: child_expr_id, cont: false, c: None })) }
-                             , vec![child_expr_id]))
-                    }
-
-                    Expr::Pred(_pred) => {
-                        None
-                    }
-
-                    Expr::Or(l, r) => {
-                        let l_expr_id = self.register_expr(not(*l));
-                        let r_expr_id = self.register_expr(not(*r));
-                        Some((Branch::Child {expr_id, cont: false , c: Some(Box::new(Branch::Child { expr_id: l_expr_id, cont: false, c: Some(Box::new(Branch::Child { expr_id: r_expr_id, cont: false , c: None })) }))}, vec![l_expr_id, r_expr_id]))
-                    }
-
-                    Expr::And(l, r) => {
-                        let l_expr_id = self.register_expr(not(*l));
-                        let r_expr_id = self.register_expr(not(*r));
-                        Some((
-                            Branch::Fork { 
-                                expr_id, 
-                                l: Box::new(Branch::Child { expr_id: l_expr_id, cont: false , c: None }), 
-                                r: Box::new(Branch::Child { expr_id: r_expr_id, cont: false , c: None }),
-                            },
-                            vec![l_expr_id, r_expr_id]
-                        ))
-                    }
-
-                    Expr::Implies(l, r) => {
-                        let l_expr_id = self.register_expr(*l);
-                        let r_expr_id = self.register_expr(not(*r));
-                        Some((Branch::Child {
+            Expr::Not(x) => match *x {
+                Expr::Not(x) => {
+                    let child_expr_id = self.register_expr(*x);
+                    Some((
+                        Branch::Child {
                             expr_id,
-                            cont: false , 
-                            c: Some(
-                                Box::new(Branch::Child { expr_id: l_expr_id, cont:false , c: Some(
-                                        Box::new(Branch::Child { expr_id: r_expr_id, cont:false , c: None })) }))}, vec![l_expr_id, r_expr_id]))
-                    }
+                            cont: false,
+                            c: Some(Box::new(Branch::Child {
+                                expr_id: child_expr_id,
+                                cont: false,
+                                c: None,
+                            })),
+                        },
+                        vec![child_expr_id],
+                    ))
                 }
-            }
+
+                Expr::Pred(_pred) => None,
+
+                Expr::Or(l, r) => {
+                    let l_expr_id = self.register_expr(not(*l));
+                    let r_expr_id = self.register_expr(not(*r));
+                    Some((
+                        Branch::Child {
+                            expr_id,
+                            cont: false,
+                            c: Some(Box::new(Branch::Child {
+                                expr_id: l_expr_id,
+                                cont: false,
+                                c: Some(Box::new(Branch::Child {
+                                    expr_id: r_expr_id,
+                                    cont: false,
+                                    c: None,
+                                })),
+                            })),
+                        },
+                        vec![l_expr_id, r_expr_id],
+                    ))
+                }
+
+                Expr::And(l, r) => {
+                    let l_expr_id = self.register_expr(not(*l));
+                    let r_expr_id = self.register_expr(not(*r));
+                    Some((
+                        Branch::Fork {
+                            expr_id,
+                            l: Box::new(Branch::Child {
+                                expr_id: l_expr_id,
+                                cont: false,
+                                c: None,
+                            }),
+                            r: Box::new(Branch::Child {
+                                expr_id: r_expr_id,
+                                cont: false,
+                                c: None,
+                            }),
+                        },
+                        vec![l_expr_id, r_expr_id],
+                    ))
+                }
+
+                Expr::Implies(l, r) => {
+                    let l_expr_id = self.register_expr(*l);
+                    let r_expr_id = self.register_expr(not(*r));
+                    Some((
+                        Branch::Child {
+                            expr_id,
+                            cont: false,
+                            c: Some(Box::new(Branch::Child {
+                                expr_id: l_expr_id,
+                                cont: false,
+                                c: Some(Box::new(Branch::Child {
+                                    expr_id: r_expr_id,
+                                    cont: false,
+                                    c: None,
+                                })),
+                            })),
+                        },
+                        vec![l_expr_id, r_expr_id],
+                    ))
+                }
+            },
 
             Expr::Or(l, r) => {
                 let l_expr_id = self.register_expr(*l);
                 let r_expr_id = self.register_expr(*r);
                 Some((
-                    Branch::Fork { 
-                        expr_id, 
-                        l: Box::new(Branch::Child { expr_id: l_expr_id, cont: false, c: None }), 
-                        r: Box::new(Branch::Child { expr_id: r_expr_id, cont: false, c: None }),
+                    Branch::Fork {
+                        expr_id,
+                        l: Box::new(Branch::Child {
+                            expr_id: l_expr_id,
+                            cont: false,
+                            c: None,
+                        }),
+                        r: Box::new(Branch::Child {
+                            expr_id: r_expr_id,
+                            cont: false,
+                            c: None,
+                        }),
                     },
-                    vec![l_expr_id, r_expr_id]
+                    vec![l_expr_id, r_expr_id],
                 ))
             }
 
             Expr::And(l, r) => {
                 let l_expr_id = self.register_expr(*l);
                 let r_expr_id = self.register_expr(*r);
-                Some((Branch::Child {expr_id, cont: false , c: Some(Box::new( Branch::Child { expr_id: l_expr_id, cont:false , c: Some(Box::new(Branch::Child { expr_id: r_expr_id, cont:false , c: None })) }))}, vec![l_expr_id, r_expr_id]))
+                Some((
+                    Branch::Child {
+                        expr_id,
+                        cont: false,
+                        c: Some(Box::new(Branch::Child {
+                            expr_id: l_expr_id,
+                            cont: false,
+                            c: Some(Box::new(Branch::Child {
+                                expr_id: r_expr_id,
+                                cont: false,
+                                c: None,
+                            })),
+                        })),
+                    },
+                    vec![l_expr_id, r_expr_id],
+                ))
             }
 
             Expr::Implies(l, r) => {
                 let l_expr_id = self.register_expr(not(*l));
                 let r_expr_id = self.register_expr(*r);
                 Some((
-                    Branch::Fork { 
-                        expr_id, 
-                        l: Box::new(Branch::Child { expr_id: l_expr_id, cont: false, c: None }), 
-                        r: Box::new(Branch::Child { expr_id: r_expr_id, cont: false, c: None }),
+                    Branch::Fork {
+                        expr_id,
+                        l: Box::new(Branch::Child {
+                            expr_id: l_expr_id,
+                            cont: false,
+                            c: None,
+                        }),
+                        r: Box::new(Branch::Child {
+                            expr_id: r_expr_id,
+                            cont: false,
+                            c: None,
+                        }),
                     },
-                    vec![l_expr_id, r_expr_id]
+                    vec![l_expr_id, r_expr_id],
                 ))
             }
 
-            Expr::Pred(_pred) => {
-                None
-            }
+            Expr::Pred(_pred) => None,
         }
     }
-
 }
 
 #[cfg(test)]
@@ -403,9 +476,10 @@ mod tests {
         let pred_b = Box::new(Expr::Pred(PredId(1)));
         let mut t = Tableau::new(
             Vec::new(),
-            not(
-                implies(*pred_a.clone(), Expr::And(pred_a.clone(), Box::new(Expr::Or(pred_a, pred_b))))
-            )
+            not(implies(
+                *pred_a.clone(),
+                Expr::And(pred_a.clone(), Box::new(Expr::Or(pred_a, pred_b))),
+            )),
         );
 
         if let Some(b) = t.gen_branch(ExprId(0)) {
@@ -438,11 +512,7 @@ mod tests {
             println!("Nothing");
         }
 
-        let pred_list = vec![
-            "A".to_string(),
-            "B".to_string(),
-            "C".to_string(),
-        ];
+        let pred_list = vec!["A".to_string(), "B".to_string(), "C".to_string()];
 
         for (i, expr) in t.expr_list.iter().enumerate() {
             println!("{}: {}", i, expr.to_string(&pred_list));
@@ -457,7 +527,7 @@ mod tests {
         let pred_d = Box::new(Expr::Pred(PredId(3)));
         let pred_e = Box::new(Expr::Pred(PredId(4)));
 
-        let pred_list = vec![ 
+        let pred_list = vec![
             "A".to_string(),
             "B".to_string(),
             "C".to_string(),
@@ -465,105 +535,139 @@ mod tests {
             "E".to_string(),
         ];
 
-        let test_cases = vec![ 
+        let test_cases = vec![
             (
                 vec![
-                    Expr::Implies(pred_a.clone(), Box::new(Expr::Or(pred_b.clone(), pred_c.clone()))),
-                    Expr::And(Box::new(not(*pred_b.clone())), Box::new(not(*pred_c.clone())))
+                    Expr::Implies(
+                        pred_a.clone(),
+                        Box::new(Expr::Or(pred_b.clone(), pred_c.clone())),
+                    ),
+                    Expr::And(
+                        Box::new(not(*pred_b.clone())),
+                        Box::new(not(*pred_c.clone())),
+                    ),
                 ],
                 not(not(*pred_a.clone())),
             ),
-
             (
-                vec![], 
-                not(Expr::Implies(pred_a.clone(), Box::new(Expr::And(pred_a.clone(), Box::new(Expr::Or(pred_a.clone(), pred_b.clone()))))))
-            ),
-
-            (
-                vec![ 
-                    Expr::Implies(Box::new(Expr::And(pred_a.clone(), pred_b.clone())), pred_c.clone()),
-                ],
-                not(Expr::Implies(pred_a.clone(), Box::new(Expr::Or(Box::new(not(*pred_b.clone())), pred_c.clone()))))
-            ),
-
-            (
-                vec![
-                    Expr::Implies(Box::new(Expr::Or(pred_a.clone(), pred_b.clone())), Box::new(Expr::Or(pred_c.clone(), pred_d.clone()))),
-                    Expr::Implies(pred_d.clone(), pred_e.clone())
-                ],
-                not(Expr::Implies(pred_a.clone(), pred_e))
-            ),
-
-            (// 1
-                vec![
-                    *pred_a.clone()
-                ],
-                not(Expr::Implies(pred_b.clone(), pred_a.clone()))
-            ),
-
-            (// 2
-                vec![
-                    Expr::Implies(pred_a.clone(), Box::new(Expr::Implies(pred_b.clone(), pred_c.clone())))
-                ],
-                not(Expr::Implies(Box::new(Expr::Implies(pred_a.clone(), pred_b.clone())), Box::new(Expr::Implies(pred_a.clone(), pred_c.clone()))))
-            ),
-
-            (// 3
-                vec![
-                    Expr::Implies(Box::new(Expr::And(pred_a.clone(), pred_b.clone())), pred_c.clone())
-                ],
-                not(Expr::Implies(pred_a.clone(), Box::new(Expr::Implies(pred_b.clone(), pred_c.clone()))))
-            ),
-
-            (// 4
                 vec![],
-                not(Expr::Or(Box::new(Expr::Implies(pred_a.clone(), pred_b.clone())), Box::new(Expr::Implies(pred_b.clone(), pred_c.clone()))))
+                not(Expr::Implies(
+                    pred_a.clone(),
+                    Box::new(Expr::And(
+                        pred_a.clone(),
+                        Box::new(Expr::Or(pred_a.clone(), pred_b.clone())),
+                    )),
+                )),
             ),
-
-            (// 5
+            (
+                vec![Expr::Implies(
+                    Box::new(Expr::And(pred_a.clone(), pred_b.clone())),
+                    pred_c.clone(),
+                )],
+                not(Expr::Implies(
+                    pred_a.clone(),
+                    Box::new(Expr::Or(Box::new(not(*pred_b.clone())), pred_c.clone())),
+                )),
+            ),
+            (
                 vec![
-                    Expr::Implies(pred_a.clone(), Box::new(Expr::Implies(pred_b.clone(), pred_c.clone())))
+                    Expr::Implies(
+                        Box::new(Expr::Or(pred_a.clone(), pred_b.clone())),
+                        Box::new(Expr::Or(pred_c.clone(), pred_d.clone())),
+                    ),
+                    Expr::Implies(pred_d.clone(), pred_e.clone()),
                 ],
-                not(Expr::Implies(pred_b.clone(), Box::new(Expr::Implies(pred_a.clone(), pred_c.clone()))))
+                not(Expr::Implies(pred_a.clone(), pred_e)),
             ),
-
-            (// 6
-                vec![
-                    Expr::And(pred_a.clone(), Box::new(Expr::And(pred_b.clone(), pred_c.clone())))
-                ],
-                not(Expr::And(Box::new(Expr::And(pred_a.clone(), pred_b.clone())), pred_c.clone()))
+            (
+                // 1
+                vec![*pred_a.clone()],
+                not(Expr::Implies(pred_b.clone(), pred_a.clone())),
             ),
-
-            (// 7
-
-                vec![
-                    Expr::Or(pred_a.clone(), Box::new(Expr::Or(pred_b.clone(), pred_c.clone())))
-                ],
-                not(Expr::Or(Box::new(Expr::Or(pred_a.clone(), pred_b.clone())), pred_c.clone()))
+            (
+                // 2
+                vec![Expr::Implies(
+                    pred_a.clone(),
+                    Box::new(Expr::Implies(pred_b.clone(), pred_c.clone())),
+                )],
+                not(Expr::Implies(
+                    Box::new(Expr::Implies(pred_a.clone(), pred_b.clone())),
+                    Box::new(Expr::Implies(pred_a.clone(), pred_c.clone())),
+                )),
             ),
-
-            (// 8
-                vec![
-                    Expr::And(Box::new(Expr::Or(pred_a.clone(), pred_c.clone())), Box::new(Expr::Or(pred_b.clone(), Box::new(not(*pred_c.clone())))))
-                ],
-                not(Expr::Or(pred_a.clone(), pred_b.clone()))
+            (
+                // 3
+                vec![Expr::Implies(
+                    Box::new(Expr::And(pred_a.clone(), pred_b.clone())),
+                    pred_c.clone(),
+                )],
+                not(Expr::Implies(
+                    pred_a.clone(),
+                    Box::new(Expr::Implies(pred_b.clone(), pred_c.clone())),
+                )),
             ),
-
-            (// 9
+            (
+                // 4
+                vec![],
+                not(Expr::Or(
+                    Box::new(Expr::Implies(pred_a.clone(), pred_b.clone())),
+                    Box::new(Expr::Implies(pred_b.clone(), pred_c.clone())),
+                )),
+            ),
+            (
+                // 5
+                vec![Expr::Implies(
+                    pred_a.clone(),
+                    Box::new(Expr::Implies(pred_b.clone(), pred_c.clone())),
+                )],
+                not(Expr::Implies(
+                    pred_b.clone(),
+                    Box::new(Expr::Implies(pred_a.clone(), pred_c.clone())),
+                )),
+            ),
+            (
+                // 6
+                vec![Expr::And(
+                    pred_a.clone(),
+                    Box::new(Expr::And(pred_b.clone(), pred_c.clone())),
+                )],
+                not(Expr::And(
+                    Box::new(Expr::And(pred_a.clone(), pred_b.clone())),
+                    pred_c.clone(),
+                )),
+            ),
+            (
+                // 7
+                vec![Expr::Or(
+                    pred_a.clone(),
+                    Box::new(Expr::Or(pred_b.clone(), pred_c.clone())),
+                )],
+                not(Expr::Or(
+                    Box::new(Expr::Or(pred_a.clone(), pred_b.clone())),
+                    pred_c.clone(),
+                )),
+            ),
+            (
+                // 8
+                vec![Expr::And(
+                    Box::new(Expr::Or(pred_a.clone(), pred_c.clone())),
+                    Box::new(Expr::Or(pred_b.clone(), Box::new(not(*pred_c.clone())))),
+                )],
+                not(Expr::Or(pred_a.clone(), pred_b.clone())),
+            ),
+            (
+                // 9
                 vec![
                     Expr::Or(pred_a.clone(), pred_b.clone()),
                     Expr::Implies(pred_b.clone(), pred_a.clone()),
-                    not(Expr::And(pred_a.clone(), pred_b.clone()))
+                    not(Expr::And(pred_a.clone(), pred_b.clone())),
                 ],
-                not(Expr::And(pred_a.clone(), Box::new(not(*pred_b.clone()))))
-            )
+                not(Expr::And(pred_a.clone(), Box::new(not(*pred_b.clone())))),
+            ),
         ];
 
         for (pre, res) in test_cases {
-            let mut t = Tableau::new(
-                pre,
-                res
-            );
+            let mut t = Tableau::new(pre, res);
 
             if let Some(branch) = t.resolve() {
                 println!("{:#?}", branch);
